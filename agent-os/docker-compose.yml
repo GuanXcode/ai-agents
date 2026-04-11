@@ -1,0 +1,7 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - AGENT_OS_CONFIG=/app/configs/default.yaml

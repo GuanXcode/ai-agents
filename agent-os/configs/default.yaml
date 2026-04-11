@@ -1,0 +1,61 @@
+app_name: agent-os
+debug: false
+
+database:
+  url: "postgresql+asyncpg://root:123456@127.0.0.1:5432/agentos"
+  pool_size: 10
+  max_overflow: 20
+
+gateway:
+  rate_limit_per_tenant: 100  # requests per minute
+
+orchestrator:
+  default_timeout_sec: 120
+  default_max_retries: 3
+  retry_base_delay_sec: 1.0
+  human_approval_timeout_sec: 1800  # 30 minutes
+
+model_router:
+  providers:
+    openai:
+      api_key_env: "OPENAI_API_KEY"
+      default_model: "gpt-4o"
+    anthropic:
+      api_key_env: "ANTHROPIC_API_KEY"
+      default_model: "claude-sonnet-4-6"
+  routing:
+    plan:
+      primary: "anthropic"
+      primary_model: "claude-sonnet-4-6"
+      fallback: "openai"
+      fallback_model: "gpt-4o"
+    reason:
+      primary: "anthropic"
+      primary_model: "claude-sonnet-4-6"
+      fallback: "openai"
+      fallback_model: "gpt-4o-mini"
+    extract:
+      primary: "anthropic"
+      primary_model: "claude-haiku-4-5-20251001"
+      fallback: "openai"
+      fallback_model: "gpt-4o-mini"
+  circuit_breaker:
+    failure_threshold: 3
+    reset_timeout_sec: 30
+
+memory:
+  short_term:
+    max_rounds: 10
+  long_term:
+    summary_max_chars: 200
+
+observability:
+  logging:
+    level: "INFO"
+    json_format: true
+  tracing:
+    enabled: true
+    exporter: "otlp"  # otlp | console | none
+    endpoint: "http://localhost:4317"
+  metrics:
+    enabled: true
