@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from agent_os.memory.schemas import Context, KnowledgeChunk
+from agent_os.model_router.interface import ModelRouterInterface
 from agent_os.orchestrator.schemas import StepOutput
 
 
@@ -22,6 +23,10 @@ class MemoryServiceInterface(ABC):
     @abstractmethod
     async def archive_task(self, task_id: str) -> None:
         """任务结束后归档短期记忆，生成长期记忆摘要。"""
+
+    @abstractmethod
+    async def compress_context(self, context: Context, model_router: ModelRouterInterface) -> Context:
+        """当短期记忆超出阈值时，调用 LLM 将最早的条目压缩为摘要。"""
 
     @abstractmethod
     async def search_knowledge(self, query: str, top_k: int = 5) -> list[KnowledgeChunk]:

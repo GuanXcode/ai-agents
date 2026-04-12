@@ -241,6 +241,7 @@ class Orchestrator(OrchestratorInterface):
             user_id=task.user_id,
             goal=task.goal,
         )
+        context = await self._memory.compress_context(context, self._model_router)
 
         # 加载步骤
         stmt = (
@@ -300,6 +301,14 @@ class Orchestrator(OrchestratorInterface):
 
             # 持久化步骤结果
             await self._memory.save_step_result(str(task.task_id), step_output)
+
+            # 将新结果追加到上下文并检查是否需要压缩
+            context.short_term.append({
+                "step_id": str(step_output.step_id),
+                "action_type": step.action_type.value if step.action_type else "unknown",
+                "output": step_output.result,
+            })
+            context = await self._memory.compress_context(context, self._model_router)
 
             # 更新任务累计成本
             task.cumulative_cost_usd = float(task.cumulative_cost_usd) + step_output.cost_usd

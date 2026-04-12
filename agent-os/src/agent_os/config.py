@@ -53,6 +53,8 @@ class ModelRouterSettings(BaseSettings):
 
 class ShortTermMemorySettings(BaseSettings):
     max_rounds: int = 10
+    max_tokens: int = 8000
+    compress_threshold: int = 3
 
 
 class LongTermMemorySettings(BaseSettings):

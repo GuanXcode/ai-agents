@@ -11,9 +11,11 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_os.config import MemorySettings
+from agent_os.db.models.task_step import ActionType
 from agent_os.memory.interface import MemoryServiceInterface
 from agent_os.memory.schemas import Context, KnowledgeChunk
-from agent_os.orchestrator.schemas import StepOutput
+from agent_os.model_router.interface import ModelRouterInterface
+from agent_os.orchestrator.schemas import StepInput, StepOutput
 
 logger = structlog.get_logger(__name__)
 
@@ -120,6 +122,71 @@ class MemoryService(MemoryServiceInterface):
                 step_count=len(summaries),
             )
             # TODO: 将 summaries 持久化为长期记忆（写入 user_preferences 或独立的 memory 表）
+
+    async def compress_context(self, context: Context, model_router: ModelRouterInterface) -> Context:
+        """当短期记忆超出阈值时，调用 LLM 将最早的条目压缩为摘要。"""
+        settings = self._settings.short_term
+        estimated_tokens = self._estimate_tokens(context.short_term)
+
+        needs_compress = (
+            len(context.short_term) > settings.max_rounds
+            or estimated_tokens > settings.max_tokens
+        )
+        if not needs_compress:
+            return context
+
+        compress_count = settings.compress_threshold
+        to_compress = context.short_term[:compress_count]
+        to_keep = context.short_term[compress_count:]
+
+        summary_text = await self._summarize_with_llm(to_compress, model_router)
+
+        compressed_entry = {
+            "step_id": "compressed",
+            "action_type": "summary",
+            "output": {"summary": summary_text},
+        }
+        context.short_term = [compressed_entry] + to_keep
+
+        logger.info(
+            "context_compressed",
+            task_id=context.task_id,
+            compressed_count=compress_count,
+            remaining_count=len(context.short_term),
+            tokens_before=estimated_tokens,
+            tokens_after=self._estimate_tokens(context.short_term),
+        )
+        return context
+
+    def _estimate_tokens(self, entries: list[dict]) -> int:
+        """粗略估算 token 数（中文约 1.5 字符/token）。"""
+        total_chars = sum(len(json.dumps(e, ensure_ascii=False)) for e in entries)
+        return int(total_chars / 1.5)
+
+    async def _summarize_with_llm(
+        self, entries: list[dict], model_router: ModelRouterInterface
+    ) -> str:
+        """调用 LLM 将多条短期记忆压缩为一段摘要。"""
+        from agent_os.model_router.router import ModelUnavailableError
+
+        entries_text = "\n".join(
+            f"[{e.get('action_type', '?')}] {json.dumps(e.get('output', ''), ensure_ascii=False)[:300]}"
+            for e in entries
+        )
+        step = StepInput(
+            action_type=ActionType.REASON,
+            instruction=(
+                "请将以下多个步骤的执行结果压缩为一段简洁的摘要（不超过200字），"
+                "保留关键信息和结论，去除冗余细节：\n\n"
+                f"{entries_text}"
+            ),
+        )
+        try:
+            response = await model_router.route(step)
+            return response.output[:self._settings.long_term.summary_max_chars]
+        except ModelUnavailableError:
+            logger.warning("compress_llm_unavailable, using fallback truncation")
+            return entries_text[:self._settings.long_term.summary_max_chars]
 
     async def search_knowledge(self, query: str, top_k: int = 5) -> list[KnowledgeChunk]:
         """语义检索知识库。MVP 返回空列表，后续接入 pgvector。"""

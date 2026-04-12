@@ -46,6 +46,8 @@ model_router:
 memory:
   short_term:
     max_rounds: 10
+    max_tokens: 8000
+    compress_threshold: 3
   long_term:
     summary_max_chars: 200
 
